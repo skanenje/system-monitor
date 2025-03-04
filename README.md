@@ -50,4 +50,4 @@ mkdir build
 cd build
 cmake ..
 make
-./system_monitor
+./monitor
