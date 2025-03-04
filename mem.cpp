@@ -31,7 +31,7 @@ public:
         mem.used_swap = (info.totalswap - info.freeswap) / (1024 * 1024);
         
         mem.ram_percent = (float)mem.used_ram / mem.total_ram * 100.0f;
-        mem.swap_percent = (float)mem.used_swap / mem.total_swap * 100.0f;
+        mem.swap_percent = info.totalswap > 0 ? (float)mem.used_swap / mem.total_swap * 100.0f : 0.0f;
 
         return mem;
     }
@@ -48,56 +48,55 @@ public:
         return disk;
     }
 
- // In mem.cpp
-vector<Proc> getProcessList() {
-    vector<Proc> processes;
-    DIR *dir = opendir("/proc");
-    if (!dir) return processes;
+    vector<Proc> getProcessList() {
+        vector<Proc> processes;
+        DIR *dir = opendir("/proc");
+        if (!dir) return processes;
 
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
-            string pid = entry->d_name;
-            string statPath = "/proc/" + pid + "/stat";
-            ifstream statFile(statPath);
-            
-            if (statFile.is_open()) {
-                Proc process;
-                process.pid = stoi(pid);
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+                string pid = entry->d_name;
+                string statPath = "/proc/" + pid + "/stat";
+                ifstream statFile(statPath);
                 
-                // Parse process name and stats
-                string line;
-                getline(statFile, line);
-                
-                size_t nameStart = line.find('(');
-                size_t nameEnd = line.rfind(')');
-                
-                if (nameStart != string::npos && nameEnd != string::npos) {
-                    process.name = line.substr(nameStart + 1, nameEnd - nameStart - 1);
+                if (statFile.is_open()) {
+                    Proc process;
+                    process.pid = stoi(pid);
                     
-                    istringstream iss(line.substr(nameEnd + 1));
-                    string field;
-                    vector<string> fields;
+                    // Parse process name and stats
+                    string line;
+                    getline(statFile, line);
                     
-                    while (iss >> field) {
-                        fields.push_back(field);
+                    size_t nameStart = line.find('(');
+                    size_t nameEnd = line.rfind(')');
+                    
+                    if (nameStart != string::npos && nameEnd != string::npos) {
+                        process.name = line.substr(nameStart + 1, nameEnd - nameStart - 1);
+                        
+                        istringstream iss(line.substr(nameEnd + 1));
+                        string field;
+                        vector<string> fields;
+                        
+                        while (iss >> field) {
+                            fields.push_back(field);
+                        }
+                        
+                        if (fields.size() >= 24) {
+                            process.state = fields[0][0];
+                            process.vsize = stoll(fields[20]);
+                            process.rss = stoll(fields[21]);
+                            process.utime = stoll(fields[11]);
+                            process.stime = stoll(fields[12]);
+                        }
+                        
+                        processes.push_back(process);
                     }
-                    
-                    if (fields.size() >= 24) {
-                        process.state = fields[0][0];
-                        process.vsize = stoll(fields[20]);
-                        process.rss = stoll(fields[21]);
-                        process.utime = stoll(fields[11]);
-                        process.stime = stoll(fields[12]);
-                    }
-                    
-                    processes.push_back(process);
                 }
             }
         }
-    }
-    
-    closedir(dir);
-    return processes;
+        
+        closedir(dir);
+        return processes;
     }
 };

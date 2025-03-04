@@ -178,7 +178,7 @@ float getFanSpeed() {
     }
     return 0.0f;
 }
-// Add to system.cpp
+// Process CPU usage tracking
 class ProcessUsageTracker {
 private:
     map<int, pair<long long, long long>> lastProcessCPUTime;
@@ -202,7 +202,13 @@ public:
 
         // Calculate delta
         long long totalDelta = currentTotalCPUTime - lastTotalCPUTime;
-        auto& [lastProcTime, _] = lastProcessCPUTime[process.pid];
+        
+        // Check if process exists in map
+        if (lastProcessCPUTime.find(process.pid) == lastProcessCPUTime.end()) {
+            lastProcessCPUTime[process.pid] = {0, 0};
+        }
+        
+        auto& lastProcTime = lastProcessCPUTime[process.pid].first;
         long long procDelta = processCPUTime - lastProcTime;
 
         // Update tracking

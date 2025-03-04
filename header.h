@@ -139,6 +139,13 @@ public:
 // student TODO : system stats
 string CPUinfo();
 const char *getOsName();
+string getCurrentUsername();
+string getHostname();
+int getTotalProcessCount();
+float getCPUTemperature();
+float getFanSpeed();
+vector<Proc> getProcessList();
+string formatNetworkBytes(long long bytes);
 
 // student TODO : memory and processes
 
