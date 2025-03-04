@@ -78,11 +78,18 @@ Networks getNetworkInterfaces() {
             istringstream iss(line);
             string interfaceName;
             getline(iss, interfaceName, ':');
+            interfaceName = interfaceName.substr(interfaceName.find_first_not_of(" \t"));
             
-            TX tx;
+            // Skip RX values (8 values)
+            long long rxDummy;
             for (int i = 0; i < 8; ++i) {
-                iss >> ((&tx.bytes)[i]);
+                iss >> rxDummy;
             }
+            
+            // Now read TX values
+            TX tx;
+            iss >> tx.bytes >> tx.packets >> tx.errs >> tx.drop 
+                >> tx.fifo >> tx.colls >> tx.carrier >> tx.compressed;
             
             txStats[interfaceName] = tx;
         }

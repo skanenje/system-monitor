@@ -28,7 +28,7 @@ public:
         mem.total_ram = info.totalram / (1024 * 1024);
         mem.used_ram = (info.totalram - info.freeram) / (1024 * 1024);
         mem.total_swap = info.totalswap / (1024 * 1024);
-        mem.used_swap = info.totalswap - info.freeswap) / (1024 * 1024);
+        mem.used_swap = (info.totalswap - info.freeswap) / (1024 * 1024);
         
         mem.ram_percent = (float)mem.used_ram / mem.total_ram * 100.0f;
         mem.swap_percent = (float)mem.used_swap / mem.total_swap * 100.0f;
@@ -99,5 +99,5 @@ vector<Proc> getProcessList() {
     
     closedir(dir);
     return processes;
-}
+    }
 };
