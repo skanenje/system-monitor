@@ -96,34 +96,46 @@ struct RX
     int carrier;
     int compressed;
 };
-enum class ErrorCode {
-    SUCCESS,
-    FILE_READ_ERROR,
-    PERMISSION_DENIED,
-    RESOURCE_UNAVAILABLE,
-    UNKNOWN_ERROR
+
+struct MemoryInfo {
+    long total_ram;
+    long used_ram;
+    long total_swap;
+    long used_swap;
+    float ram_percent;
+    float swap_percent;
 };
 
-struct SystemError {
-    ErrorCode code;
-    string message;
+struct DiskInfo {
+    long total_space;
+    long used_space;
+    float usage_percent;
 };
 
-// Modify relevant functions to return SystemError
-SystemError getSystemResources(MemoryInfo& memInfo, DiskInfo& diskInfo) {
-    struct sysinfo info;
-    if (sysinfo(&info) != 0) {
-        return {ErrorCode::RESOURCE_UNAVAILABLE, "Failed to retrieve system information"};
-    }
+class SystemResourceTracker {
+public:
+    MemoryInfo getMemoryInfo();
+    DiskInfo getDiskInfo();
+    vector<Proc> getProcessList();
+};
 
-    struct statvfs stat;
-    if (statvfs("/", &stat) != 0) {
-        return {ErrorCode::PERMISSION_DENIED, "Cannot access root filesystem"};
-    }
+class CPUUsageTracker {
+private:
+    CPUStats lastStats = {0};
+    float currentUsage = 0.0f;
 
-    // Existing calculation logic remains the same
-    return {ErrorCode::SUCCESS, "Resources retrieved successfully"};
-}
+public:
+    float calculateCPUUsage();
+    float getCurrentUsage();
+};
+
+class NetworkTracker {
+public:
+    Networks getNetworkInterfaces();
+    map<string, RX> getNetworkRX();
+    map<string, TX> getNetworkTX();
+};
+
 // student TODO : system stats
 string CPUinfo();
 const char *getOsName();
@@ -131,5 +143,13 @@ const char *getOsName();
 // student TODO : memory and processes
 
 // student TODO : network
+
+// Helper function for text formatting
+template<typename... Args>
+std::string TextF(const char* fmt, Args... args) {
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), fmt, args...);
+    return std::string(buffer);
+}
 
 #endif
