@@ -44,8 +44,14 @@ using namespace gl;
 // systemWindow, display information for the system monitorization
 // Global performance trackers
 static CPUUsageTracker cpuTracker;
+static ProcessUsageTracker processTracker;
 static std::vector<float> cpuUsageHistory(100, 0.0f);
 static std::vector<float> temperatureHistory(100, 0.0f);
+
+// Timing variables for graph updates
+static float cpuUpdateTime = 0.0f;
+static float fanUpdateTime = 0.0f;
+static float thermalUpdateTime = 0.0f;
 
 void systemWindow(const char *id, ImVec2 size, ImVec2 position)
 {
@@ -64,7 +70,7 @@ void systemWindow(const char *id, ImVec2 size, ImVec2 position)
 
     // Existing Performance Tabs
     if (ImGui::BeginTabBar("SystemPerformanceTabs")) {
-        // CPU Performance Tab (existing implementation remains the same)
+        // CPU Performance Tab
         if (ImGui::BeginTabItem("CPU")) {
             static bool pauseGraph = false;
             static float graphFPS = 30.0f;
@@ -72,9 +78,17 @@ void systemWindow(const char *id, ImVec2 size, ImVec2 position)
 
             float currentCPUUsage = cpuTracker.calculateCPUUsage();
 
-            // Shift history and add new value
-            cpuUsageHistory.erase(cpuUsageHistory.begin());
-            cpuUsageHistory.push_back(currentCPUUsage);
+            // Only update history if not paused
+            if (!pauseGraph) {
+                // Update based on FPS setting
+                float updateInterval = 1.0f / graphFPS;
+                cpuUpdateTime += io.DeltaTime;
+                if (cpuUpdateTime >= updateInterval) {
+                    cpuUsageHistory.erase(cpuUsageHistory.begin());
+                    cpuUsageHistory.push_back(currentCPUUsage);
+                    cpuUpdateTime = 0.0f;
+                }
+            }
 
             ImGui::Checkbox("Pause Graph", &pauseGraph);
             ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
@@ -87,29 +101,73 @@ void systemWindow(const char *id, ImVec2 size, ImVec2 position)
             ImGui::EndTabItem();
         }
 
-        // Fan Tab (existing implementation remains the same)
+        // Fan Tab
         if (ImGui::BeginTabItem("Fan")) {
+            static bool pauseGraph = false;
+            static float graphFPS = 30.0f;
+            static float graphYScale = 5000.0f;
+            static std::vector<float> fanSpeedHistory(100, 0.0f);
+            
             float fanSpeed = getFanSpeed();
             
+            // Only update history if not paused
+            if (!pauseGraph) {
+                // Update based on FPS setting
+                float updateInterval = 1.0f / graphFPS;
+                fanUpdateTime += io.DeltaTime;
+                if (fanUpdateTime >= updateInterval) {
+                    fanSpeedHistory.erase(fanSpeedHistory.begin());
+                    fanSpeedHistory.push_back(fanSpeed);
+                    fanUpdateTime = 0.0f;
+                }
+            }
+            
+            ImGui::Checkbox("Pause Graph", &pauseGraph);
+            ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
+            ImGui::SliderFloat("Y-Scale", &graphYScale, 1000.0f, 10000.0f);
+            
+            ImGui::Text("Fan Status: %s", fanSpeed > 0 ? "Active" : "Inactive");
             ImGui::Text("Fan Speed: %.0f RPM", fanSpeed);
-            ImGui::ProgressBar(fanSpeed / 5000.0f, ImVec2(0.0f, 0.0f), TextF("%.0f RPM", fanSpeed).c_str());
-
+            ImGui::Text("Fan Level: %s", 
+                        fanSpeed < 1000 ? "Low" : 
+                        fanSpeed < 3000 ? "Medium" : "High");
+            
+            ImGui::PlotLines("Fan Speed", fanSpeedHistory.data(), fanSpeedHistory.size(), 
+                             0, TextF("%.0f RPM", fanSpeed).c_str(), 
+                             0.0f, graphYScale, ImVec2(0, 80));
+            
             ImGui::EndTabItem();
         }
 
-        // Thermal Tab (existing implementation remains the same)
+        // Thermal Tab
         if (ImGui::BeginTabItem("Thermal")) {
+            static bool pauseGraph = false;
+            static float graphFPS = 30.0f;
+            static float graphYScale = 100.0f;
+            
             float temperature = getCPUTemperature();
-
-            // Shift temperature history and add new value
-            temperatureHistory.erase(temperatureHistory.begin());
-            temperatureHistory.push_back(temperature);
-
+            
+            // Only update history if not paused
+            if (!pauseGraph) {
+                // Update based on FPS setting
+                float updateInterval = 1.0f / graphFPS;
+                thermalUpdateTime += io.DeltaTime;
+                if (thermalUpdateTime >= updateInterval) {
+                    temperatureHistory.erase(temperatureHistory.begin());
+                    temperatureHistory.push_back(temperature);
+                    thermalUpdateTime = 0.0f;
+                }
+            }
+            
+            ImGui::Checkbox("Pause Graph", &pauseGraph);
+            ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
+            ImGui::SliderFloat("Y-Scale", &graphYScale, 10.0f, 200.0f);
+            
             ImGui::Text("Current Temperature: %.1f°C", temperature);
             ImGui::PlotLines("Temperature", temperatureHistory.data(), temperatureHistory.size(), 
                              0, TextF("Temp: %.1f°C", temperature).c_str(), 
-                             0.0f, 100.0f, ImVec2(0, 80));
-
+                             0.0f, graphYScale, ImVec2(0, 80));
+            
             ImGui::EndTabItem();
         }
 
@@ -198,8 +256,8 @@ void memoryProcessesWindow(const char *id, ImVec2 size, ImVec2 position)
             ImGui::Text("%c", proc.state);
             
             ImGui::TableNextColumn();
-            // Placeholder for actual CPU usage calculation
-            ImGui::Text("%.2f%%", 0.0f);
+            float cpuUsage = processTracker.calculateProcessCPUUsage(proc);
+            ImGui::Text("%.2f%%", cpuUsage);
             
             ImGui::TableNextColumn();
             // Memory usage as percentage of total memory
@@ -291,6 +349,50 @@ void networkWindow(const char *id, ImVec2 size, ImVec2 position)
                 }
                 ImGui::EndTable();
             }
+            ImGui::EndTabItem();
+        }
+
+        // Network Usage Visualization Tabs
+        if (ImGui::BeginTabItem("Network Usage")) {
+            static bool showRX = true;
+            static bool showTX = true;
+            
+            ImGui::Checkbox("Show RX", &showRX);
+            ImGui::SameLine();
+            ImGui::Checkbox("Show TX", &showTX);
+            
+            map<string, RX> rxStats = networkTracker.getNetworkRX();
+            map<string, TX> txStats = networkTracker.getNetworkTX();
+            
+            // Set a reasonable max value for visualization (2GB)
+            const float maxValue = 2.0f * 1024 * 1024 * 1024; // 2GB in bytes
+            
+            if (showRX) {
+                ImGui::Text("RX Network Usage:");
+                for (const auto& [iface, rx] : rxStats) {
+                    // Skip loopback interface
+                    if (iface.find("lo") != string::npos) continue;
+                    
+                    float percentage = min(1.0f, (float)rx.bytes / maxValue);
+                    ImGui::Text("%s:", iface.c_str());
+                    ImGui::SameLine(150);
+                    ImGui::ProgressBar(percentage, ImVec2(-1, 0), formatNetworkBytes(rx.bytes).c_str());
+                }
+            }
+            
+            if (showTX) {
+                ImGui::Text("TX Network Usage:");
+                for (const auto& [iface, tx] : txStats) {
+                    // Skip loopback interface
+                    if (iface.find("lo") != string::npos) continue;
+                    
+                    float percentage = min(1.0f, (float)tx.bytes / maxValue);
+                    ImGui::Text("%s:", iface.c_str());
+                    ImGui::SameLine(150);
+                    ImGui::ProgressBar(percentage, ImVec2(-1, 0), formatNetworkBytes(tx.bytes).c_str());
+                }
+            }
+            
             ImGui::EndTabItem();
         }
     }
