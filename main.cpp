@@ -127,6 +127,7 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
 void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
     ImGuiIO& io = ImGui::GetIO();
     processTracker.updateDeltaTime(io.DeltaTime);
+    float currentTime = ImGui::GetTime(); // Get current time for throttling
 
     ImGui::Begin(id);
     ImGui::SetWindowSize(size);
@@ -154,7 +155,7 @@ void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
     ImGui::EndChild();
 
     static char processFilter[256] = "";
-    ImGui::InputText("Filter Processes", processFilter, IM_ARRAYSIZE(processFilter));
+    ImGui::InputText("Filter Processes", processFilter, sizeof(processFilter));
 
     vector<Proc> processes = resourceTracker.getProcessList();
 
@@ -176,10 +177,10 @@ void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
             ImGui::TableNextColumn(); ImGui::Text("%s", proc.name.c_str());
             ImGui::TableNextColumn(); ImGui::Text("%c", proc.state);
             ImGui::TableNextColumn();
-            float cpuUsage = processTracker.calculateProcessCPUUsage(proc);
+            float cpuUsage = processTracker.calculateProcessCPUUsage(proc, currentTime);
             ImGui::Text("%.2f%%", cpuUsage);
             ImGui::TableNextColumn();
-            float memPercent = (proc.vsize / 1024.0f) / memInfo.total_ram * 100.0f; // KB to MB
+            float memPercent = (proc.vsize / 1024.0f) / memInfo.total_ram * 100.0f;
             ImGui::Text("%.2f%%", memPercent);
         }
         ImGui::EndTable();

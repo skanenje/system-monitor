@@ -87,15 +87,18 @@ public:
 };
 
 class ProcessUsageTracker {
-private:
-    map<int, pair<long long, long long>> lastProcessCPUTime;
-    float deltaTime; // Added for frame-based timing
-
-public:
-    ProcessUsageTracker();
-    float calculateProcessCPUUsage(const Proc& process);
-    void updateDeltaTime(float dt); // Added declaration
-};
+    private:
+        map<int, pair<long long, long long>> lastProcessCPUTime;
+        float deltaTime;
+        float updateInterval;
+        float lastUpdateTime;
+        map<int, float> cpuUsageCache;
+    
+    public:
+        ProcessUsageTracker();
+        float calculateProcessCPUUsage(const Proc& process, float currentTime); // No change needed, just context
+        void updateDeltaTime(float dt);
+    };
 
 class NetworkTracker {
 public:
@@ -116,6 +119,10 @@ float getFanSpeed();
 string formatNetworkBytes(long long bytes);
 
 template<typename... Args>
-string TextF(const char* fmt, Args... args);
+string TextF(const char* fmt, Args... args) {
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), fmt, args...);
+    return string(buffer);
+}
 
 #endif

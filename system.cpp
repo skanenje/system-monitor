@@ -148,35 +148,42 @@ float CPUUsageTracker::calculateCPUUsage() {
 
 float CPUUsageTracker::getCurrentUsage() { return currentUsage; }
 
-ProcessUsageTracker::ProcessUsageTracker() : deltaTime(0.0f) {}
+ProcessUsageTracker::ProcessUsageTracker() : deltaTime(0.0f), updateInterval(1.0f), lastUpdateTime(0.0f) {}
 
 void ProcessUsageTracker::updateDeltaTime(float dt) {
     deltaTime = dt;
 }
 
-float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process) {
+float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float currentTime) {
+    // Return cached value if not time to update
+    if (currentTime - lastUpdateTime < updateInterval) {
+        auto it = cpuUsageCache.find(process.pid);
+        return (it != cpuUsageCache.end()) ? it->second : 0.0f;
+    }
+
+    // Time to update: calculate new CPU usage
     long long processCPUTime = process.utime + process.stime;
     if (lastProcessCPUTime.find(process.pid) == lastProcessCPUTime.end()) {
         lastProcessCPUTime[process.pid] = {processCPUTime, 0};
-        return 0.0f; // First measurement, no delta yet
+        cpuUsageCache[process.pid] = 0.0f;
+        lastUpdateTime = currentTime;
+        return 0.0f; // First measurement
     }
 
     auto [lastProcTime, _] = lastProcessCPUTime[process.pid];
     long long procDelta = processCPUTime - lastProcTime;
 
+    float cpuUsage = 0.0f;
     if (deltaTime > 0 && procDelta > 0) {
         float ticksPerSecond = sysconf(_SC_CLK_TCK);
-        float cpuUsage = (procDelta / (deltaTime * ticksPerSecond)) * 100.0f;
-        lastProcessCPUTime[process.pid] = {processCPUTime, 0};
-        return min(cpuUsage, 100.0f); // Cap at 100% per process
+        cpuUsage = (procDelta / (deltaTime * ticksPerSecond)) * 100.0f;
+        cpuUsage = min(cpuUsage, 100.0f); // Cap at 100%
     }
-    lastProcessCPUTime[process.pid] = {processCPUTime, 0};
-    return 0.0f;
-}
 
-template<typename... Args>
-string TextF(const char* fmt, Args... args) {
-    char buffer[256];
-    snprintf(buffer, sizeof(buffer), fmt, args...);
-    return string(buffer);
+    // Update cache and last time
+    cpuUsageCache[process.pid] = cpuUsage;
+    lastProcessCPUTime[process.pid] = {processCPUTime, 0};
+    lastUpdateTime = currentTime;
+
+    return cpuUsage;
 }
