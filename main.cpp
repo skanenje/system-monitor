@@ -4,8 +4,6 @@
 #include <vector>
 #include <algorithm>
 
-#define IM_ARRAYSIZE(_ARR) ((int)(sizeof(_ARR) / sizeof(*_ARR)))
-
 // Global performance trackers
 static CPUUsageTracker cpuTracker;
 static ProcessUsageTracker processTracker;
@@ -211,7 +209,7 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
                 ImGui::TableSetupColumn("Errs");
                 ImGui::TableSetupColumn("Drop");
                 ImGui::TableSetupColumn("FIFO");
-                ImGui::TableSetupColumn("Colls");
+                ImGui::TableSetupColumn("Frame");
                 ImGui::TableSetupColumn("Compressed");
                 ImGui::TableHeadersRow();
 
@@ -223,7 +221,7 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
                     ImGui::TableNextColumn(); ImGui::Text("%d", rx.errs);
                     ImGui::TableNextColumn(); ImGui::Text("%d", rx.drop);
                     ImGui::TableNextColumn(); ImGui::Text("%d", rx.fifo);
-                    ImGui::TableNextColumn(); ImGui::Text("%d", rx.colls);
+                    ImGui::TableNextColumn(); ImGui::Text("%d", rx.frame);
                     ImGui::TableNextColumn(); ImGui::Text("%d", rx.compressed);
                 }
                 ImGui::EndTable();
@@ -240,7 +238,7 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
                 ImGui::TableSetupColumn("Errs");
                 ImGui::TableSetupColumn("Drop");
                 ImGui::TableSetupColumn("FIFO");
-                ImGui::TableSetupColumn("Frame");
+                ImGui::TableSetupColumn("Colls");
                 ImGui::TableSetupColumn("Compressed");
                 ImGui::TableHeadersRow();
 
@@ -252,7 +250,7 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
                     ImGui::TableNextColumn(); ImGui::Text("%d", tx.errs);
                     ImGui::TableNextColumn(); ImGui::Text("%d", tx.drop);
                     ImGui::TableNextColumn(); ImGui::Text("%d", tx.fifo);
-                    ImGui::TableNextColumn(); ImGui::Text("%d", tx.frame);
+                    ImGui::TableNextColumn(); ImGui::Text("%d", tx.colls);
                     ImGui::TableNextColumn(); ImGui::Text("%d", tx.compressed);
                 }
                 ImGui::EndTable();

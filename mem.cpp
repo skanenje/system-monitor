@@ -3,100 +3,82 @@
 #include <sys/statvfs.h>
 #include <algorithm>
 
-struct MemoryInfo {
-    long total_ram;
-    long used_ram;
-    long total_swap;
-    long used_swap;
-    float ram_percent;
-    float swap_percent;
-};
+MemoryInfo SystemResourceTracker::getMemoryInfo() {
+    struct sysinfo info;
+    sysinfo(&info);
 
-struct DiskInfo {
-    long total_space;
-    long used_space;
-    float usage_percent;
-};
+    MemoryInfo mem;
+    mem.total_ram = info.totalram / (1024 * 1024);
+    mem.used_ram = (info.totalram - info.freeram) / (1024 * 1024);
+    mem.total_swap = info.totalswap / (1024 * 1024);
+    mem.used_swap = (info.totalswap - info.freeswap) / (1024 * 1024);
+    
+    mem.ram_percent = (float)mem.used_ram / mem.total_ram * 100.0f;
+    mem.swap_percent = info.totalswap > 0 ? (float)mem.used_swap / mem.total_swap * 100.0f : 0.0f;
 
-class SystemResourceTracker {
-public:
-    MemoryInfo getMemoryInfo() {
-        struct sysinfo info;
-        sysinfo(&info);
+    return mem;
+}
 
-        MemoryInfo mem;
-        mem.total_ram = info.totalram / (1024 * 1024);
-        mem.used_ram = (info.totalram - info.freeram) / (1024 * 1024);
-        mem.total_swap = info.totalswap / (1024 * 1024);
-        mem.used_swap = (info.totalswap - info.freeswap) / (1024 * 1024);
-        
-        mem.ram_percent = (float)mem.used_ram / mem.total_ram * 100.0f;
-        mem.swap_percent = info.totalswap > 0 ? (float)mem.used_swap / mem.total_swap * 100.0f : 0.0f;
+DiskInfo SystemResourceTracker::getDiskInfo() {
+    struct statvfs stat;
+    statvfs("/", &stat);
 
-        return mem;
-    }
+    DiskInfo disk;
+    disk.total_space = stat.f_blocks * stat.f_frsize / (1024 * 1024 * 1024);
+    disk.used_space = (stat.f_blocks - stat.f_bfree) * stat.f_frsize / (1024 * 1024 * 1024);
+    disk.usage_percent = (float)disk.used_space / disk.total_space * 100.0f;
 
-    DiskInfo getDiskInfo() {
-        struct statvfs stat;
-        statvfs("/", &stat);
+    return disk;
+}
 
-        DiskInfo disk;
-        disk.total_space = stat.f_blocks * stat.f_frsize / (1024 * 1024 * 1024);
-        disk.used_space = (stat.f_blocks - stat.f_bfree) * stat.f_frsize / (1024 * 1024 * 1024);
-        disk.usage_percent = (float)disk.used_space / disk.total_space * 100.0f;
+vector<Proc> SystemResourceTracker::getProcessList() {
+    vector<Proc> processes;
+    DIR *dir = opendir("/proc");
+    if (!dir) return processes;
 
-        return disk;
-    }
-
-    vector<Proc> getProcessList() {
-        vector<Proc> processes;
-        DIR *dir = opendir("/proc");
-        if (!dir) return processes;
-
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
-                string pid = entry->d_name;
-                string statPath = "/proc/" + pid + "/stat";
-                ifstream statFile(statPath);
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+            string pid = entry->d_name;
+            string statPath = "/proc/" + pid + "/stat";
+            ifstream statFile(statPath);
+            
+            if (statFile.is_open()) {
+                Proc process;
+                process.pid = stoi(pid);
                 
-                if (statFile.is_open()) {
-                    Proc process;
-                    process.pid = stoi(pid);
+                string line;
+                getline(statFile, line);
+                
+                size_t nameStart = line.find('(');
+                size_t nameEnd = line.rfind(')');
+                
+                if (nameStart != string::npos && nameEnd != string::npos) {
+                    process.name = line.substr(nameStart + 1, nameEnd - nameStart - 1);
                     
-                    // Parse process name and stats
-                    string line;
-                    getline(statFile, line);
+                    istringstream iss(line.substr(nameEnd + 1));
+                    string field;
+                    vector<string> fields;
                     
-                    size_t nameStart = line.find('(');
-                    size_t nameEnd = line.rfind(')');
-                    
-                    if (nameStart != string::npos && nameEnd != string::npos) {
-                        process.name = line.substr(nameStart + 1, nameEnd - nameStart - 1);
-                        
-                        istringstream iss(line.substr(nameEnd + 1));
-                        string field;
-                        vector<string> fields;
-                        
-                        while (iss >> field) {
-                            fields.push_back(field);
-                        }
-                        
-                        if (fields.size() >= 24) {
-                            process.state = fields[0][0];
-                            process.vsize = stoll(fields[20]);
-                            process.rss = stoll(fields[21]);
-                            process.utime = stoll(fields[11]);
-                            process.stime = stoll(fields[12]);
-                        }
-                        
-                        processes.push_back(process);
+                    while (iss >> field) {
+                        fields.push_back(field);
                     }
+                    
+                    if (fields.size() >= 24) {
+                        process.state = fields[0][0];
+                        process.vsize = stoll(fields[20]);
+                        process.rss = stoll(fields[21]);
+                        process.utime = stoll(fields[11]);
+                        process.stime = stoll(fields[12]);
+                    }
+                    
+                    processes.push_back(process);
                 }
+                statFile.close();
             }
         }
-        
-        closedir(dir);
-        return processes;
     }
-};
+    
+    closedir(dir);
+    return processes;
+}
