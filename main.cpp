@@ -32,6 +32,7 @@ static CPUUsageTracker cpuTracker;
 static ProcessUsageTracker processTracker;
 static vector<float> cpuUsageHistory(100, 0.0f);
 static vector<float> temperatureHistory(100, 0.0f);
+static NetworkRate rateTracker;
 
 // Timing variables for graph updates
 static float cpuUpdateTime = 0.0f;
@@ -312,16 +313,17 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
 
             map<string, RX> rxStats = networkTracker.getNetworkRX();
             map<string, TX> txStats = networkTracker.getNetworkTX();
-            const float maxValue = 2.0f * 1024 * 1024 * 1024; // 2GB
+            rateTracker.update(networkTracker, ImGui::GetTime()); // Update rates
 
             if (showRX) {
                 ImGui::Text("RX Network Usage:");
                 for (const auto& [iface, rx] : rxStats) {
                     if (iface.find("lo") != string::npos) continue;
-                    float percentage = min(1.0f, (float)rx.bytes / maxValue);
+                    float rate = rateTracker.rxRate[iface]; // Bytes per second
+                    float scaledRate = rate / (1024 * 1024); // Scale to MB/s for progress bar
                     ImGui::Text("%s:", iface.c_str());
                     ImGui::SameLine(150);
-                    ImGui::ProgressBar(percentage, ImVec2(-1, 0), formatNetworkBytes(rx.bytes).c_str());
+                    ImGui::ProgressBar(scaledRate, ImVec2(-1, 0), formatNetworkBytes(rate).c_str());
                 }
             }
 
@@ -329,10 +331,11 @@ void networkWindow(const char* id, ImVec2 size, ImVec2 position) {
                 ImGui::Text("TX Network Usage:");
                 for (const auto& [iface, tx] : txStats) {
                     if (iface.find("lo") != string::npos) continue;
-                    float percentage = min(1.0f, (float)tx.bytes / maxValue);
+                    float rate = rateTracker.txRate[iface]; // Bytes per second
+                    float scaledRate = rate / (1024 * 1024); // Scale to MB/s for progress bar
                     ImGui::Text("%s:", iface.c_str());
                     ImGui::SameLine(150);
-                    ImGui::ProgressBar(percentage, ImVec2(-1, 0), formatNetworkBytes(tx.bytes).c_str());
+                    ImGui::ProgressBar(scaledRate, ImVec2(-1, 0), formatNetworkBytes(rate).c_str());
                 }
             }
             ImGui::EndTabItem();
@@ -388,19 +391,13 @@ int main(int, char**) {
         }
     
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(window); // Pass window pointer
+        ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
     
         ImVec2 mainDisplay = io.DisplaySize;
-        memoryProcessesWindow("== Memory and Processes ==",
-                              ImVec2((mainDisplay.x / 2) - 20, (mainDisplay.y / 2) + 30),
-                              ImVec2((mainDisplay.x / 2) + 10, 10));
-        systemWindow("== System ==",
-                     ImVec2((mainDisplay.x / 2) - 10, (mainDisplay.y / 2) + 30),
-                     ImVec2(10, 10));
-        networkWindow("== Network ==",
-                      ImVec2(mainDisplay.x - 20, (mainDisplay.y / 2) - 60),
-                      ImVec2(10, (mainDisplay.y / 2) + 50));
+        memoryProcessesWindow("== Memory and Processes ==", ImVec2((mainDisplay.x / 2) - 20, (mainDisplay.y / 2) + 30), ImVec2((mainDisplay.x / 2) + 10, 10));
+        systemWindow("== System ==", ImVec2((mainDisplay.x / 2) - 10, (mainDisplay.y / 2) + 30), ImVec2(10, 10));
+        networkWindow("== Network ==", ImVec2(mainDisplay.x - 20, (mainDisplay.y / 2) - 60), ImVec2(10, (mainDisplay.y / 2) + 50));
     
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
