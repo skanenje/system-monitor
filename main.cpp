@@ -3,6 +3,7 @@
 #include <GL/gl3w.h>
 #include <vector>
 #include <algorithm>
+#include <set>
 
 // Global performance trackers
 static CPUUsageTracker cpuTracker;
@@ -159,6 +160,9 @@ void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
 
     vector<Proc> processes = resourceTracker.getProcessList();
 
+    // Track selected processes
+    static set<int> selectedPids;
+
     if (ImGui::BeginTable("Processes", 5,
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Sortable)) {
         ImGui::TableSetupColumn("PID");
@@ -173,7 +177,22 @@ void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
                 continue;
 
             ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::Text("%d", proc.pid);
+            ImGui::TableNextColumn();
+            bool isSelected = selectedPids.count(proc.pid) > 0;
+            // Use Selectable for the entire row, starting with PID
+            if (ImGui::Selectable(TextF("%d", proc.pid).c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                if (ImGui::GetIO().KeyCtrl) {
+                    // Multi-select with Ctrl
+                    if (isSelected) selectedPids.erase(proc.pid); // Deselect
+                    else selectedPids.insert(proc.pid); // Select
+                } else {
+                    // Single-select without Ctrl
+                    selectedPids.clear();
+                    selectedPids.insert(proc.pid);
+                }
+            }
+
+            // Display remaining columns
             ImGui::TableNextColumn(); ImGui::Text("%s", proc.name.c_str());
             ImGui::TableNextColumn(); ImGui::Text("%c", proc.state);
             ImGui::TableNextColumn();
@@ -185,6 +204,10 @@ void memoryProcessesWindow(const char* id, ImVec2 size, ImVec2 position) {
         }
         ImGui::EndTable();
     }
+
+    // Optional: Display the number of selected processes
+    ImGui::Text("Selected processes: %zu", selectedPids.size());
+
     ImGui::End();
 }
 
