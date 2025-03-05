@@ -4,8 +4,30 @@
 #include <vector>
 #include <algorithm>
 #include <set>
-
 // Global performance trackers
+struct NetworkRate {
+    map<string, pair<long long, float>> lastRX, lastTX; // Last bytes, timestamp
+    map<string, float> rxRate, txRate; // Rates in bytes/sec
+    void update(NetworkTracker& tracker, float time) {
+        auto rxStats = tracker.getNetworkRX();
+        auto txStats = tracker.getNetworkTX();
+        for (auto& [iface, rx] : rxStats) {
+            if (lastRX.count(iface)) {
+                float dt = time - lastRX[iface].second;
+                rxRate[iface] = dt > 0 ? (rx.bytes - lastRX[iface].first) / dt : 0;
+            }
+            lastRX[iface] = {rx.bytes, time};
+        }
+        for (auto& [iface, tx] : txStats) {
+            if (lastTX.count(iface)) {
+                float dt = time - lastTX[iface].second;
+                txRate[iface] = dt > 0 ? (tx.bytes - lastTX[iface].first) / dt : 0;
+            }
+            lastTX[iface] = {tx.bytes, time};
+        }
+    }
+};
+
 static CPUUsageTracker cpuTracker;
 static ProcessUsageTracker processTracker;
 static vector<float> cpuUsageHistory(100, 0.0f);
