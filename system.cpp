@@ -92,22 +92,42 @@ int getTotalProcessCount() {
     return total;
 }
 
+#include <fstream>
+#include <string>
+#include <sstream>
+
 float getCPUTemperature() {
-    ifstream tempFile("/sys/class/thermal/thermal_zone0/temp");
+    std::ifstream tempFile("/proc/acpi/ibm/thermal");
     if (tempFile.is_open()) {
-        int temp;
-        tempFile >> temp;
-        return temp / 1000.0f;
+        std::string line;
+        if (getline(tempFile, line)) {
+            // Parse the temperatures line
+            // Format is "temperatures: 50 -128 0 0 39 0 0 -128"
+            if (line.find("temperatures:") != std::string::npos) {
+                std::istringstream iss(line.substr(line.find(":") + 1));
+                int temp;
+                iss >> temp; // Read the first temperature value
+                return temp; // Already in degrees C, no need to divide by 1000
+            }
+        }
     }
     return 0.0f;
 }
 
 float getFanSpeed() {
-    ifstream fanFile("/sys/class/hwmon/hwmon0/fan1_input");
+    std::ifstream fanFile("/proc/acpi/ibm/fan");
     if (fanFile.is_open()) {
-        float speed;
-        fanFile >> speed;
-        return speed;
+        std::string line;
+        while (getline(fanFile, line)) {
+            // Look for the line that starts with "speed:"
+            // Format is "speed:      2814"
+            if (line.find("speed:") != std::string::npos) {
+                std::istringstream iss(line.substr(line.find(":") + 1));
+                float speed;
+                iss >> speed;
+                return speed;
+            }
+        }
     }
     return 0.0f;
 }
