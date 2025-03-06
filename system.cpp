@@ -3,6 +3,7 @@
 #include <fstream>
 #include <pwd.h>
 #include <sstream>
+#include <unistd.h>
 
 string CPUinfo() {
     char CPUBrandString[0x40];
@@ -168,42 +169,66 @@ float CPUUsageTracker::calculateCPUUsage() {
 
 float CPUUsageTracker::getCurrentUsage() { return currentUsage; }
 
-ProcessUsageTracker::ProcessUsageTracker() : deltaTime(0.0f), updateInterval(1.0f), lastUpdateTime(0.0f) {}
+ProcessUsageTracker::ProcessUsageTracker() 
+    : deltaTime(0.0f), updateInterval(1.0f), lastUpdateTime(0.0f) {}
 
 void ProcessUsageTracker::updateDeltaTime(float dt) {
-    deltaTime = dt;
+    deltaTime += dt; // Accumulate time since last major update
 }
-
 float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float currentTime) {
     // Return cached value if not time to update
     if (currentTime - lastUpdateTime < updateInterval) {
         auto it = cpuUsageCache.find(process.pid);
         return (it != cpuUsageCache.end()) ? it->second : 0.0f;
     }
+    
+    // Get number of CPU cores
+    int numCores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (numCores <= 0) numCores = 1; // Fallback to 1 core if detection fails
 
-    // Time to update: calculate new CPU usage
-    long long processCPUTime = process.utime + process.stime;
+    // Get total system CPU time
+    long long totalTime = 0;
+    ifstream statFile("/proc/stat");
+    if (statFile.is_open()) {
+        string line;
+        getline(statFile, line);
+        
+        long long user, nice, system, idle, iowait, irq, softirq, steal;
+        sscanf(line.c_str(), "cpu %lld %lld %lld %lld %lld %lld %lld %lld", 
+               &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
+        
+        totalTime = user + nice + system + idle + iowait + irq + softirq + steal;
+    }
+    
+    // Calculate process CPU time (including children if available)
+    long long processCPUTime = process.utime + process.stime; // Add process.cutime + process.cstime if available
+    
+    // If this is the first time we've seen this process
     if (lastProcessCPUTime.find(process.pid) == lastProcessCPUTime.end()) {
-        lastProcessCPUTime[process.pid] = {processCPUTime, 0};
+        lastProcessCPUTime[process.pid] = {processCPUTime, totalTime};
         cpuUsageCache[process.pid] = 0.0f;
         lastUpdateTime = currentTime;
-        return 0.0f; // First measurement
+        return 0.0f;
     }
-
-    auto [lastProcTime, _] = lastProcessCPUTime[process.pid];
-    long long procDelta = processCPUTime - lastProcTime;
-
+    
+    // Calculate deltas
+    auto [lastProcTime, lastTotalTime] = lastProcessCPUTime[process.pid];
+    long long procTimeDelta = processCPUTime - lastProcTime;
+    long long totalTimeDelta = totalTime - lastTotalTime;
+    
+    // Calculate CPU usage percentage
     float cpuUsage = 0.0f;
-    if (deltaTime > 0 && procDelta > 0) {
-        float ticksPerSecond = sysconf(_SC_CLK_TCK);
-        cpuUsage = (procDelta / (deltaTime * ticksPerSecond)) * 100.0f;
-        cpuUsage = min(cpuUsage, 100.0f); // Cap at 100%
+    if (totalTimeDelta > 0 && procTimeDelta >= 0) {
+        // Normalize to per-core usage and scale by number of cores (like top)
+        cpuUsage = (float)procTimeDelta * 100.0f / totalTimeDelta * numCores;
+        // Cap at 100% per core * number of cores
+        cpuUsage = min(cpuUsage, 100.0f * numCores);
     }
-
-    // Update cache and last time
+    
+    // Update cache and last values
     cpuUsageCache[process.pid] = cpuUsage;
-    lastProcessCPUTime[process.pid] = {processCPUTime, 0};
+    lastProcessCPUTime[process.pid] = {processCPUTime, totalTime};
     lastUpdateTime = currentTime;
-
+    
     return cpuUsage;
 }
