@@ -34,7 +34,7 @@ make
 ```
 Run the application:
 ```sh
-./system-monitor
+./monitor
 ```
 
 ## Project Structure
