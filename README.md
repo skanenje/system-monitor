@@ -86,6 +86,7 @@ system-monitor/
 - The application opens with three main sections: **System**, **Memory & Processes**, and **Network**.
 - Users can interact with UI elements such as **checkboxes, sliders, and buttons** to control monitoring features.
 - The CPU section includes an **FPS slider** and a **graph scale slider**.
+- To select a process use Ctrl + click;
 
 ## Learning Outcomes
 By working on this project, you will gain experience in:
