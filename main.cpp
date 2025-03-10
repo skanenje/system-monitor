@@ -33,6 +33,8 @@ static ProcessUsageTracker processTracker;
 static vector<float> cpuUsageHistory(100, 0.0f);
 static vector<float> temperatureHistory(100, 0.0f);
 static NetworkRate rateTracker;
+static vector<float> cpuUsageBuffer(5, 0.0f);  // Buffer for last 5 readings
+static int bufferIndex = 0;
 
 // Timing variables for graph updates
 static float cpuUpdateTime = 0.0f;
@@ -59,31 +61,41 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
     ImGui::EndChild();
 
     if (ImGui::BeginTabBar("SystemPerformanceTabs")) {
-        if (ImGui::BeginTabItem("CPU")) {
-            static bool pauseGraph = false;
-            static float graphFPS = 30.0f;
-            static float graphYScale = 100.0f;
-            float currentCPUUsage = cpuTracker.calculateCPUUsage();
+       if (ImGui::BeginTabItem("CPU")) {
+        static bool pauseGraph = false;
+        static float graphFPS = 30.0f;
+        static float graphYScale = 100.0f;
+        float currentCPUUsage = cpuTracker.calculateCPUUsage();
 
-            if (!pauseGraph) {
-                float updateInterval = 1.0f / graphFPS;
-                cpuUpdateTime += io.DeltaTime;
-                if (cpuUpdateTime >= updateInterval) {
-                    cpuUsageHistory.erase(cpuUsageHistory.begin());
-                    cpuUsageHistory.push_back(currentCPUUsage);
-                    cpuUpdateTime = 0.0f;
-                }
-            }
-
-            ImGui::Checkbox("Pause Graph", &pauseGraph);
-            ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
-            ImGui::SliderFloat("Y-Scale", &graphYScale, 10.0f, 200.0f);
-
-            ImGui::PlotLines("CPU Usage", cpuUsageHistory.data(), cpuUsageHistory.size(),
-                             0, TextF("CPU: %.1f%%", currentCPUUsage).c_str(),
-                             0.0f, graphYScale, ImVec2(0, 80));
-            ImGui::EndTabItem();
+        // Add moving average calculation
+        cpuUsageBuffer[bufferIndex] = currentCPUUsage;
+        bufferIndex = (bufferIndex + 1) % cpuUsageBuffer.size();
+        
+        float smoothedCPUUsage = 0.0f;
+        for (float usage : cpuUsageBuffer) {
+            smoothedCPUUsage += usage;
         }
+        smoothedCPUUsage /= cpuUsageBuffer.size();
+
+        if (!pauseGraph) {
+            float updateInterval = 1.0f / graphFPS;
+            cpuUpdateTime += io.DeltaTime;
+            if (cpuUpdateTime >= updateInterval) {
+                cpuUsageHistory.erase(cpuUsageHistory.begin());
+                cpuUsageHistory.push_back(smoothedCPUUsage);  // Use smoothed value
+                cpuUpdateTime = 0.0f;
+            }
+        }
+
+        ImGui::Checkbox("Pause Graph", &pauseGraph);
+        ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
+        ImGui::SliderFloat("Y-Scale", &graphYScale, 10.0f, 200.0f);
+
+        ImGui::PlotLines("CPU Usage", cpuUsageHistory.data(), cpuUsageHistory.size(),
+                        0, TextF("CPU: %.1f%%", smoothedCPUUsage).c_str(),  // Use smoothed value
+                        0.0f, graphYScale, ImVec2(0, 80));
+        ImGui::EndTabItem();
+    }
 
         if (ImGui::BeginTabItem("Fan")) {
             static bool pauseGraph = false;
