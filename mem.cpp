@@ -7,12 +7,45 @@ MemoryInfo SystemResourceTracker::getMemoryInfo() {
     struct sysinfo info;
     sysinfo(&info);
 
+    // Read from /proc/meminfo for more accurate memory usage (htop-compatible)
+    unsigned long memTotal = 0, memFree = 0;
+    unsigned long buffers = 0, cached = 0, sReclaimable = 0, shmem = 0;
+    std::ifstream meminfo("/proc/meminfo");
+    std::string line;
+
+    while (std::getline(meminfo, line)) {
+        std::istringstream iss(line);
+        std::string key;
+        unsigned long value;
+        iss >> key >> value;
+
+        if (key == "MemTotal:") {
+            memTotal = value;
+        } else if (key == "MemFree:") {
+            memFree = value;
+        } else if (key == "Buffers:") {
+            buffers = value;
+        } else if (key == "Cached:") {
+            cached = value;
+        } else if (key == "SReclaimable:") {
+            sReclaimable = value;
+        } else if (key == "Shmem:") {
+            shmem = value;
+        }
+    }
+
+    // Calculate memory usage similar to htop
+    unsigned long cachedTotal = cached + sReclaimable - shmem;
+    unsigned long usedDiff = memFree + cachedTotal + buffers;
+    unsigned long usedMem = (memTotal >= usedDiff) ? memTotal - usedDiff : memTotal - memFree;
+
     MemoryInfo mem;
-    mem.total_ram = info.totalram / (1024 * 1024);
-    mem.used_ram = (info.totalram - info.freeram) / (1024 * 1024);
+    mem.total_ram = memTotal / 1024;  // Convert KB to MB
+    mem.used_ram = usedMem / 1024;    // Convert KB to MB
+
     mem.total_swap = info.totalswap / (1024 * 1024);
     mem.used_swap = (info.totalswap - info.freeswap) / (1024 * 1024);
-    
+
     mem.ram_percent = (float)mem.used_ram / mem.total_ram * 100.0f;
     mem.swap_percent = info.totalswap > 0 ? (float)mem.used_swap / mem.total_swap * 100.0f : 0.0f;
 
@@ -42,28 +75,28 @@ vector<Proc> SystemResourceTracker::getProcessList() {
             string pid = entry->d_name;
             string statPath = "/proc/" + pid + "/stat";
             ifstream statFile(statPath);
-            
+
             if (statFile.is_open()) {
                 Proc process;
                 process.pid = stoi(pid);
-                
+
                 string line;
                 getline(statFile, line);
-                
+
                 size_t nameStart = line.find('(');
                 size_t nameEnd = line.rfind(')');
-                
+
                 if (nameStart != string::npos && nameEnd != string::npos) {
                     process.name = line.substr(nameStart + 1, nameEnd - nameStart - 1);
-                    
+
                     istringstream iss(line.substr(nameEnd + 1));
                     string field;
                     vector<string> fields;
-                    
+
                     while (iss >> field) {
                         fields.push_back(field);
                     }
-                    
+
                     if (fields.size() >= 24) {
                         process.state = fields[0][0];
                         process.vsize = stoll(fields[20]);
@@ -71,14 +104,14 @@ vector<Proc> SystemResourceTracker::getProcessList() {
                         process.utime = stoll(fields[11]);
                         process.stime = stoll(fields[12]);
                     }
-                    
+
                     processes.push_back(process);
                 }
                 statFile.close();
             }
         }
     }
-    
+
     closedir(dir);
     return processes;
 }
