@@ -98,10 +98,77 @@ int getTotalProcessCount() {
 #include <sstream>
 
 float getCPUTemperature() {
-    std::ifstream tempFile("/proc/acpi/ibm/thermal");
-    if (tempFile.is_open()) {
+    // Method 1: Try to find coretemp in hwmon devices
+    DIR* hwmonDir = opendir("/sys/class/hwmon");
+    if (hwmonDir) {
+        struct dirent* entry;
+        while ((entry = readdir(hwmonDir)) != nullptr) {
+            if (entry->d_type == DT_LNK || entry->d_type == DT_DIR) {
+                if (strncmp(entry->d_name, "hwmon", 5) == 0) {
+                    std::string namePath = "/sys/class/hwmon/" + std::string(entry->d_name) + "/name";
+                    std::ifstream nameFile(namePath);
+                    std::string name;
+                    if (nameFile.is_open() && std::getline(nameFile, name)) {
+                        if (name == "coretemp") {
+                            // Found coretemp, read Package id 0 temperature
+                            std::string tempPath = "/sys/class/hwmon/" + std::string(entry->d_name) + "/temp1_input";
+                            std::ifstream tempFile(tempPath);
+                            int temp;
+                            if (tempFile.is_open() && (tempFile >> temp)) {
+                                closedir(hwmonDir);
+                                return temp / 1000.0f; // Convert from millidegrees to degrees
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        closedir(hwmonDir);
+    }
+
+    // Method 2: Try x86_pkg_temp thermal zone
+    std::ifstream pkgTempFile("/sys/class/thermal/thermal_zone14/temp");
+    if (pkgTempFile.is_open()) {
+        int temp;
+        if (pkgTempFile >> temp) {
+            return temp / 1000.0f; // Convert from millidegrees to degrees
+        }
+    }
+
+    // Method 3: Try to find any CPU-related thermal zone
+    DIR* thermalDir = opendir("/sys/class/thermal");
+    if (thermalDir) {
+        struct dirent* entry;
+        while ((entry = readdir(thermalDir)) != nullptr) {
+            if (strncmp(entry->d_name, "thermal_zone", 12) == 0) {
+                std::string typePath = "/sys/class/thermal/" + std::string(entry->d_name) + "/type";
+                std::ifstream typeFile(typePath);
+                std::string type;
+                if (typeFile.is_open() && std::getline(typeFile, type)) {
+                    // Look for CPU-related thermal zones
+                    if (type.find("x86") != std::string::npos ||
+                        type.find("cpu") != std::string::npos ||
+                        type.find("CPU") != std::string::npos ||
+                        type.find("processor") != std::string::npos) {
+                        std::string tempPath = "/sys/class/thermal/" + std::string(entry->d_name) + "/temp";
+                        std::ifstream tempFile(tempPath);
+                        int temp;
+                        if (tempFile.is_open() && (tempFile >> temp)) {
+                            closedir(thermalDir);
+                            return temp / 1000.0f; // Convert from millidegrees to degrees
+                        }
+                    }
+                }
+            }
+        }
+        closedir(thermalDir);
+    }
+
+    // Method 4: ThinkPad-specific method (fallback)
+    std::ifstream thinkpadTempFile("/proc/acpi/ibm/thermal");
+    if (thinkpadTempFile.is_open()) {
         std::string line;
-        if (getline(tempFile, line)) {
+        if (getline(thinkpadTempFile, line)) {
             // Parse the temperatures line
             // Format is "temperatures: 50 -128 0 0 39 0 0 -128"
             if (line.find("temperatures:") != std::string::npos) {
@@ -112,14 +179,43 @@ float getCPUTemperature() {
             }
         }
     }
+
+    // If all methods fail, return 0
     return 0.0f;
 }
 
 float getFanSpeed() {
-    std::ifstream fanFile("/proc/acpi/ibm/fan");
-    if (fanFile.is_open()) {
+    // Method 1: Try to find fan speed in hwmon devices
+    DIR* hwmonDir = opendir("/sys/class/hwmon");
+    if (hwmonDir) {
+        struct dirent* entry;
+        while ((entry = readdir(hwmonDir)) != nullptr) {
+            if (entry->d_type == DT_LNK || entry->d_type == DT_DIR) {
+                if (strncmp(entry->d_name, "hwmon", 5) == 0) {
+                    // Check for fan1_input or similar files
+                    std::string fanPath = "/sys/class/hwmon/" + std::string(entry->d_name) + "/fan1_input";
+                    std::ifstream fanFile(fanPath);
+                    int speed;
+                    if (fanFile.is_open() && (fanFile >> speed)) {
+                        closedir(hwmonDir);
+                        return static_cast<float>(speed);
+                    }
+                }
+            }
+        }
+        closedir(hwmonDir);
+    }
+
+    // Method 2: Try HP-specific fan information
+    // HP laptops might have fan information in different locations
+    // This is a placeholder for HP-specific fan information
+    // You would need to research the specific paths for HP EliteBook
+
+    // Method 3: ThinkPad-specific method (fallback)
+    std::ifstream thinkpadFanFile("/proc/acpi/ibm/fan");
+    if (thinkpadFanFile.is_open()) {
         std::string line;
-        while (getline(fanFile, line)) {
+        while (getline(thinkpadFanFile, line)) {
             // Look for the line that starts with "speed:"
             // Format is "speed:      2814"
             if (line.find("speed:") != std::string::npos) {
@@ -130,6 +226,8 @@ float getFanSpeed() {
             }
         }
     }
+
+    // If all methods fail, return 0
     return 0.0f;
 }
 
@@ -143,7 +241,7 @@ float CPUUsageTracker::calculateCPUUsage() {
     ifstream statFile("/proc/stat");
     string line;
     getline(statFile, line);
-    
+
     CPUStats current;
     sscanf(line.c_str(), "cpu %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld",
            &current.user, &current.nice, &current.system,
@@ -169,7 +267,7 @@ float CPUUsageTracker::calculateCPUUsage() {
 
 float CPUUsageTracker::getCurrentUsage() { return currentUsage; }
 
-ProcessUsageTracker::ProcessUsageTracker() 
+ProcessUsageTracker::ProcessUsageTracker()
     : deltaTime(0.0f), updateInterval(1.0f), lastUpdateTime(0.0f) {}
 
 void ProcessUsageTracker::updateDeltaTime(float dt) {
@@ -181,7 +279,7 @@ float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float c
         auto it = cpuUsageCache.find(process.pid);
         return (it != cpuUsageCache.end()) ? it->second : 0.0f;
     }
-    
+
     // Get number of CPU cores
     int numCores = sysconf(_SC_NPROCESSORS_ONLN);
     if (numCores <= 0) numCores = 1; // Fallback to 1 core if detection fails
@@ -192,17 +290,17 @@ float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float c
     if (statFile.is_open()) {
         string line;
         getline(statFile, line);
-        
+
         long long user, nice, system, idle, iowait, irq, softirq, steal;
-        sscanf(line.c_str(), "cpu %lld %lld %lld %lld %lld %lld %lld %lld", 
+        sscanf(line.c_str(), "cpu %lld %lld %lld %lld %lld %lld %lld %lld",
                &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
-        
+
         totalTime = user + nice + system + idle + iowait + irq + softirq + steal;
     }
-    
+
     // Calculate process CPU time (including children if available)
     long long processCPUTime = process.utime + process.stime; // Add process.cutime + process.cstime if available
-    
+
     // If this is the first time we've seen this process
     if (lastProcessCPUTime.find(process.pid) == lastProcessCPUTime.end()) {
         lastProcessCPUTime[process.pid] = {processCPUTime, totalTime};
@@ -210,12 +308,12 @@ float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float c
         lastUpdateTime = currentTime;
         return 0.0f;
     }
-    
+
     // Calculate deltas
     auto [lastProcTime, lastTotalTime] = lastProcessCPUTime[process.pid];
     long long procTimeDelta = processCPUTime - lastProcTime;
     long long totalTimeDelta = totalTime - lastTotalTime;
-    
+
     // Calculate CPU usage percentage
     float cpuUsage = 0.0f;
     if (totalTimeDelta > 0 && procTimeDelta >= 0) {
@@ -224,11 +322,11 @@ float ProcessUsageTracker::calculateProcessCPUUsage(const Proc& process, float c
         // Cap at 100% per core * number of cores
         cpuUsage = min(cpuUsage, 100.0f * numCores);
     }
-    
+
     // Update cache and last values
     cpuUsageCache[process.pid] = cpuUsage;
     lastProcessCPUTime[process.pid] = {processCPUTime, totalTime};
     lastUpdateTime = currentTime;
-    
+
     return cpuUsage;
 }

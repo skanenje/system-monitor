@@ -1,5 +1,5 @@
 #include "header.h"
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <GL/gl3w.h>
 #include <vector>
 #include <algorithm>
@@ -70,7 +70,7 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
         // Add moving average calculation
         cpuUsageBuffer[bufferIndex] = currentCPUUsage;
         bufferIndex = (bufferIndex + 1) % cpuUsageBuffer.size();
-        
+
         float smoothedCPUUsage = 0.0f;
         for (float usage : cpuUsageBuffer) {
             smoothedCPUUsage += usage;
@@ -103,6 +103,7 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
             static float graphYScale = 5000.0f;
             static vector<float> fanSpeedHistory(100, 0.0f);
             float fanSpeed = getFanSpeed();
+            bool fanAvailable = fanSpeed > 0;
 
             if (!pauseGraph) {
                 float updateInterval = 1.0f / graphFPS;
@@ -118,14 +119,20 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
             ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
             ImGui::SliderFloat("Y-Scale", &graphYScale, 1000.0f, 10000.0f);
 
-            ImGui::Text("Fan Status: %s", fanSpeed > 0 ? "Active" : "Inactive");
-            ImGui::Text("Fan Speed: %.0f RPM", fanSpeed);
-            ImGui::Text("Fan Level: %s",
-                        fanSpeed < 1000 ? "Low" : fanSpeed < 3000 ? "Medium" : "High");
+            if (fanAvailable) {
+                ImGui::Text("Fan Status: Active");
+                ImGui::Text("Fan Speed: %.0f RPM", fanSpeed);
+                ImGui::Text("Fan Level: %s",
+                            fanSpeed < 1000 ? "Low" : fanSpeed < 3000 ? "Medium" : "High");
 
-            ImGui::PlotLines("Fan Speed", fanSpeedHistory.data(), fanSpeedHistory.size(),
-                             0, TextF("%.0f RPM", fanSpeed).c_str(),
-                             0.0f, graphYScale, ImVec2(0, 80));
+                ImGui::PlotLines("Fan Speed", fanSpeedHistory.data(), fanSpeedHistory.size(),
+                                0, TextF("%.0f RPM", fanSpeed).c_str(),
+                                0.0f, graphYScale, ImVec2(0, 80));
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Fan information not available on this system");
+                ImGui::Text("Fan monitoring is supported on some ThinkPad models and");
+                ImGui::Text("other systems with accessible fan sensors.");
+            }
             ImGui::EndTabItem();
         }
 
@@ -134,6 +141,7 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
             static float graphFPS = 30.0f;
             static float graphYScale = 100.0f;
             float temperature = getCPUTemperature();
+            bool tempAvailable = temperature > 0.1f; // Small threshold to detect valid readings
 
             if (!pauseGraph) {
                 float updateInterval = 1.0f / graphFPS;
@@ -149,10 +157,27 @@ void systemWindow(const char* id, ImVec2 size, ImVec2 position) {
             ImGui::SliderFloat("Graph FPS", &graphFPS, 1.0f, 60.0f);
             ImGui::SliderFloat("Y-Scale", &graphYScale, 10.0f, 200.0f);
 
-            ImGui::Text("Current Temperature: %.1f°C", temperature);
-            ImGui::PlotLines("Temperature", temperatureHistory.data(), temperatureHistory.size(),
-                             0, TextF("Temp: %.1f°C", temperature).c_str(),
-                             0.0f, graphYScale, ImVec2(0, 80));
+            if (tempAvailable) {
+                ImGui::Text("Current Temperature: %.1f°C", temperature);
+                ImGui::PlotLines("Temperature", temperatureHistory.data(), temperatureHistory.size(),
+                                0, TextF("Temp: %.1f°C", temperature).c_str(),
+                                0.0f, graphYScale, ImVec2(0, 80));
+
+                // Add temperature status indicator
+                if (temperature < 50.0f) {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Temperature Status: Normal");
+                } else if (temperature < 70.0f) {
+                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Temperature Status: Warm");
+                } else if (temperature < 85.0f) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Temperature Status: Hot");
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Temperature Status: Critical!");
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Temperature information not available");
+                ImGui::Text("The system is using a hardware-agnostic approach to find");
+                ImGui::Text("temperature sensors. No compatible sensors were found.");
+            }
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -401,16 +426,16 @@ int main(int, char**) {
             if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE))
                 done = true;
         }
-    
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
-    
+
         ImVec2 mainDisplay = io.DisplaySize;
         memoryProcessesWindow("== Memory and Processes ==", ImVec2((mainDisplay.x / 2) - 20, (mainDisplay.y / 2) + 30), ImVec2((mainDisplay.x / 2) + 10, 10));
         systemWindow("== System ==", ImVec2((mainDisplay.x / 2) - 10, (mainDisplay.y / 2) + 30), ImVec2(10, 10));
         networkWindow("== Network ==", ImVec2(mainDisplay.x - 20, (mainDisplay.y / 2) - 60), ImVec2(10, (mainDisplay.y / 2) + 50));
-    
+
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
         glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
