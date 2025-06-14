@@ -67,7 +67,8 @@ map<char, int> countProcessStates() {
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != nullptr) {
-        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+        // Check if the directory name is numeric (PID)
+        if (isdigit(entry->d_name[0])) {
             string statPath = "/proc/" + string(entry->d_name) + "/stat";
             ifstream statFile(statPath);
             if (statFile.is_open()) {
@@ -76,6 +77,8 @@ map<char, int> countProcessStates() {
                 size_t statePos = fullStat.find_last_of(")");
                 if (statePos != string::npos && statePos + 2 < fullStat.length()) {
                     char state = fullStat[statePos + 2];
+                    // Map 'I' (idle) to 'S' (sleeping) to match top's behavior
+                    if (state == 'I') state = 'S';
                     processStates[state]++;
                 }
                 statFile.close();
